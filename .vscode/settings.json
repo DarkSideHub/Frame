@@ -93,7 +93,8 @@
         "qeventloop": "cpp",
         "ranges": "cpp",
         "valarray": "cpp",
-        "qwidget": "cpp"
+        "qwidget": "cpp",
+        "qabstracttablemodel": "cpp"
     },
     //"cmake.sourceDirectory": "/home/li/work/mwork/testspace",
 }

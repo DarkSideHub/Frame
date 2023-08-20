@@ -31,6 +31,7 @@ class EXTENSIONSYSTEM_EXPORT IPlugin : public QObject {
   Q_OBJECT
 
  private:
+  // 因为会发生指针的传递，所以用shared_ptr
   std::shared_ptr<SPEC> Spec;
 
  public:
@@ -39,13 +40,18 @@ class EXTENSIONSYSTEM_EXPORT IPlugin : public QObject {
   virtual bool Initialize(
       std::vector<std::string> Args = std::vector<std::string>()) noexcept = 0;
   virtual bool Run() noexcept = 0;
-  virtual StopFlag Stop() noexcept = 0;
+  virtual StopFlag Stop() noexcept { return StopFlag::SynchronousStop; };
   std::shared_ptr<SPEC> GetSpec() noexcept { return Spec; };
+  void SetSpec(std::shared_ptr<SPEC> mSpec) noexcept {
+    Spec.reset();
+    Spec = mSpec;
+  };
+
   // 用于插件和主框架通信
   virtual void Receive(MSG Msg) noexcept = 0;
 
  signals:
-  void asynchronousStopFinished();
+  void asynchronousStopFinished(std::shared_ptr<SPEC> mSpec);
   void sendSignal(MSG Msg);
   // 向日志控件发送日志
   void sendLog(QString Log, LOGLEVEL Loglevel);
@@ -84,6 +90,7 @@ class EXTENSIONSYSTEM_EXPORT SPEC {
   TYPE Type;
   QString IID;
   QString Category;
+  QJsonObject MetaData;
 
  public:
   using DependencySpecsTpye =
@@ -104,13 +111,17 @@ class EXTENSIONSYSTEM_EXPORT SPEC {
   QString GetVersion() noexcept { return Version; };
   TYPE GetType() noexcept { return Type; };
   QString GetCategory() noexcept { return Category; };
+  QString GetDescription() noexcept { return ""; };
+  QJsonObject GetMetaData() noexcept { return MetaData; };
+
   std::shared_ptr<IPlugin> GetPlugin() noexcept { return PluginObject; };
 
-  void SetName(const QString& mName) noexcept { Name = mName; };
   void SetIID(const QString& mIID) noexcept { IID = mIID; };
-  void SetVersion(const QString& mVersion) noexcept { Version = mVersion; };
   void SetType(TYPE mType) noexcept { Type = mType; };
-  void SetCategory(const QString& mCategory) noexcept { Category = mCategory; };
+  void SetPlugin(std::shared_ptr<IPlugin> mPlugin) noexcept {
+    PluginObject.reset();
+    PluginObject = mPlugin;
+  };
 
   DependencySpecsTpye GetDependencySpecs() noexcept { return DependencySpecs; };
   std::vector<DEPENDENCY> GetDependency() noexcept { return Dependencies; };
@@ -124,6 +135,7 @@ class EXTENSIONSYSTEM_EXPORT SPEC {
   bool Load() noexcept;
   bool Initialize() noexcept;
   bool Kill() noexcept;
+  bool Unload() noexcept;
   bool Run() noexcept;
   StopFlag Stop() noexcept;
 };
@@ -134,34 +146,27 @@ class EXTENSIONSYSTEM_EXPORT PLUGIN_MANAGE : public QObject {
   Q_OBJECT
  private:
   PLUGIN_MANAGE(){};
-  ~PLUGIN_MANAGE(){};
+  ~PLUGIN_MANAGE();
   PLUGIN_MANAGE(const PLUGIN_MANAGE&) = delete;
   PLUGIN_MANAGE& operator=(const PLUGIN_MANAGE&) = delete;
-  std::vector<std::shared_ptr<QObject>> Objects;
-  std::vector<std::shared_ptr<SPEC>> PluginSpecs;
+  //  因为插件实例只有一个，所以使用std::unordered_set存储插件信息，
+  std::unordered_set<std::shared_ptr<QObject>> Objects;
+  std::unordered_set<std::shared_ptr<SPEC>> PluginSpecs;
   std::unordered_map<QString, std::vector<std::shared_ptr<SPEC>>>
       PluginCategory;
-
- public:
-  static PLUGIN_MANAGE& GetInstance() {
-    static PLUGIN_MANAGE instance;
-    return instance;
+  std::unordered_set<std::shared_ptr<SPEC>> AsyncPlugins;
+  std::shared_ptr<LOGGER> Logger;
+  // 如果有多个给定类型，则返回任意一个
+  template <typename T>
+  std::shared_ptr<T> GetObject() noexcept;
+  std::shared_ptr<QObject> GetObject(std::string_view mName) noexcept;
+  std::unordered_set<std::shared_ptr<QObject>> GetAllObject() noexcept {
+    return Objects;
   }
 
   bool AddObject(std::shared_ptr<IPlugin> mObject) noexcept;
   bool RemoveObject(std::shared_ptr<IPlugin> mObject) noexcept;
-  // 如果有多个给定类型，则返回任意一个
-  template <typename T>
-  std::shared_ptr<T> GetObject() noexcept;
-  std::shared_ptr<QObject> GetObject(const QString& mName) noexcept;
-  std::vector<std::shared_ptr<QObject>> GetAllObject() noexcept {
-    return Objects;
-  }
-
   bool Read() noexcept;
-  bool Load() noexcept;
-  bool UnLoad(const QString& Path) noexcept;
-  bool UnLoad() noexcept;
   bool Resolve() noexcept;
   bool EnterTargetState(const std::shared_ptr<SPEC>,
                         STATE TargetState) noexcept;
@@ -174,12 +179,32 @@ class EXTENSIONSYSTEM_EXPORT PLUGIN_MANAGE : public QObject {
 
   // 循环依赖检查，如果CircularityCheckQueue中出现两个相同的插件实例，说明有循环依赖
   // Queue中保存已经经过循环检查的插件实例
-  bool CircularityCheck(
-      std::shared_ptr<SPEC> Spec, std::vector<std::shared_ptr<SPEC>>& Queue,
-      std::vector<std::shared_ptr<SPEC>>& CircularityCheckQueue) noexcept;
+  bool CircularityCheck(std::shared_ptr<SPEC> Spec,
+                        std::vector<std::shared_ptr<SPEC>>& Queue,
+                        std::unordered_set<std::shared_ptr<SPEC>>&
+                            CircularityCheckQueue) noexcept;
+
+ public:
+  static PLUGIN_MANAGE& GetInstance() {
+    static PLUGIN_MANAGE instance;
+    return instance;
+  }
+  void SetLogger(std::shared_ptr<LOGGER> mLogger) noexcept {
+    Logger.reset();
+    Logger = mLogger;
+  };
+
+  // 外界只能加载和卸载插件
+  bool Load() noexcept;
+  bool UnLoad(const QString& Path) noexcept;
+  bool UnLoad() noexcept;
+  // 获取插件信息
+  std::vector<QJsonObject> GetInfo() noexcept;
+
  public slots:
   // 用于插件和主框架通信
   void Receive(MSG Msg) noexcept;
+  void AsyncStopFinished(std::shared_ptr<SPEC> mSpec) noexcept;
  signals:
   void objectChange(std::shared_ptr<QObject> mObject);
   void pluginsChanged();

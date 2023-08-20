@@ -5,9 +5,12 @@ import QtQuick.Window
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import Qt.labs.platform as Platform
+import Qt.labs.qmlmodels 1.0
 
 import EditorComponents 1.0
 import LoggerComponents 1.0
+import ModelComponents 1.0
+
 
 
 
@@ -33,17 +36,25 @@ ApplicationWindow {
         }  
         Menu {
             id: viewMenu
-            title: qsTr("&View")
+            title: qsTr("&视图")
         }
         Menu {
             id: setMenu
-            title: qsTr("&Set")
+            title: qsTr("&设置")
         }
         Menu {
-            id: pluginMenu
-            title: qsTr("&插件管理")
+            id: toolMenu
+            title: qsTr("&工具")
             MenuItem {
-                text: qsTr("加载")
+                text: qsTr("插件管理")
+                onTriggered: {
+                    pluginInfoTable.UpModelData()
+                    pluginManage.open()
+                }
+            }
+             MenuItem {
+                id: other
+                text: qsTr("其他工具")
             }
         }
 
@@ -56,10 +67,6 @@ ApplicationWindow {
         nameFilters: ["Markdown files (*.md *.markdown)"]
         currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
         onAccepted: textEditor.load(selectedFile)//on<Signal>是信号处理程序，Accepted是信号
-    }
-
-    header: ToolBar{
-
     }
 
     footer: ToolBar {
@@ -192,5 +199,59 @@ ApplicationWindow {
                 background: null
             }
         }     
-    }   
+    }
+
+    TableModel{
+        id:pluginInfoTable
+    }
+
+
+    Dialog {
+        id: pluginManage
+        modal: true       
+        contentWidth: view.width
+        contentHeight: view.height
+        anchors.centerIn: Overlay.overlay
+        title: "插件管理器"
+
+        Rectangle {
+            width: 400
+            height: 100
+            color: "white"
+
+            TableView {
+                id: view
+                anchors.fill: parent
+                clip: true
+                model: pluginInfoTable
+                delegate: Rectangle {
+                    implicitWidth: 100
+                    implicitHeight: 20
+                    Text {
+                        text: display
+                        anchors.centerIn: parent
+                    }
+                }
+            }
+        }
+        footer:DialogButtonBox {
+            Button {
+                text: qsTr("加载")
+                onClicked: model.submit()
+            }
+            Button {
+                text: qsTr("卸载")
+                onClicked: model.submit()
+            }
+            Button {
+                text: qsTr("退出")
+                onClicked: model.submit()
+            }
+            Button {
+                text: qsTr("刷新")
+                onClicked: pluginInfoTable.UpModelData()
+            }
+        }
+    }
+
 }

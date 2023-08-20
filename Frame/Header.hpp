@@ -1,8 +1,10 @@
 #ifndef HEADER_FILE
 #define HEADER_FILE
 
+#include <qqml.h>
 #include <time.h>
 
+#include <QAbstractTableModel>
 #include <QDebug>
 #include <QDir>
 #include <QEventLoop>
@@ -32,6 +34,7 @@
 #include <QtCore/QUrl>
 #include <QtGui/QGuiApplication>
 #include <QtQml/QQmlApplicationEngine>
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -40,6 +43,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #if defined(EXTENSIONSYSTEM_LIBRARY)

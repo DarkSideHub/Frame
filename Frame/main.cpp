@@ -1,7 +1,7 @@
-
 #include "ExtensionSystem.h"
 #include "Header.hpp"
 #include "PlainTextHandler.h"
+#include "TableModel.h"
 
 int main(int argc, char *argv[]) {
   QGuiApplication::setApplicationName("Text Editor");
@@ -10,36 +10,32 @@ int main(int argc, char *argv[]) {
   // 将C++中的Editor类注册为QML中的TextEditor类，命名空间为EditorComponents
   qmlRegisterType<EDITOR>("EditorComponents", 1, 0, "TextEditor");
   qmlRegisterType<LOGGER>("LoggerComponents", 1, 0, "Log");
+  qmlRegisterType<DataModel::TABLEMODEL>("ModelComponents", 1, 0, "TableModel");
 
   if (!std::filesystem::exists("logs")) {
     std::filesystem::create_directory("logs");
   }
   auto Filelogger = spdlog::daily_logger_st("Logger", "logs/daily.txt", 0, 00);
   QQmlApplicationEngine appEngine;
-  appEngine.load(QUrl("/home/li/work/mhttp/Frame/resource/main.qml"));
+  appEngine.load(QUrl("/home/li/work/mhttp/Frame/resource/Main.qml"));
 
   auto &mPluginManage =
       ExtensionSystem::PluginManager::PLUGIN_MANAGE::GetInstance();
 
-  std::shared_ptr<LOGGER> LogObject;
-  LogObject.reset(qobject_cast<LOGGER *>(
+  std::shared_ptr<LOGGER> Logger;
+  Logger.reset(qobject_cast<LOGGER *>(
       appEngine.rootObjects().first()->findChild<QObject *>("LogObject")));
-  if (LogObject) {
+  if (Logger) {
     QObject::connect(&mPluginManage,
                      &ExtensionSystem::PluginManager::PLUGIN_MANAGE::sendLog,
-                     LogObject.get(), &LOGGER::ReceiveLog);
+                     Logger.get(), &LOGGER::ReceiveLog);
+    mPluginManage.SetLogger(Logger);
   } else {
     std::cout << "获取日志对象失败" << std::endl;
     return 0;
   }
   mPluginManage.Load();
-  // 将插件的sendlog与日志对象的ReceiveLog绑定
-  for (auto mPlugin : mPluginManage.GetAllObject()) {
-    QObject::connect(
-        &(*qobject_cast<ExtensionSystem::IPlugin *>(mPlugin.get())),
-        &ExtensionSystem::IPlugin::sendLog, LogObject.get(),
-        &LOGGER::ReceiveLog);
-  }
+
   ExtensionSystem::MSG Msg;
   QJsonObject mjson;
   Msg = std::make_tuple("Window", "PluginB", mjson);

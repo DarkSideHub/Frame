@@ -16,7 +16,7 @@ set(CMAKE_PREFIX_PATH "/home/li/work/QT/6.5.1/gcc_64/")
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 OPTIONAL_COMPONENTS Concurrent)
 
 
-set(SOURCE_FILES "main.cpp" "PlainTextHandler.cpp" "ExtensionSystem.cpp")
+set(SOURCE_FILES "main.cpp" "PlainTextHandler.cpp" "ExtensionSystem.cpp" "TableModel.cpp")
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

@@ -4,36 +4,38 @@
 #include "moc_ExtensionSystem.cpp"
 namespace ExtensionSystem {
 std::mutex ObjectMutex;
-
-std::string PLUGIN_METADATA = "MetaData";
-std::string PLUGIN_NAME = "Name";
-std::string PLUGIN_VERSION = "Version";
-std::string PLUGIN_REQUIRED = "Required";
-std::string ARGUMENTS = "Arguments";
-std::string ARGUMENT_NAME = "Name";
-std::string ARGUMENT_PARAMETER = "Parameter";
-std::string ARGUMENT_DESCRIPTION = "Description";
-std::string DEPENDENCIES = "Dependencies";
-std::string DEPENDENCY_NAME = "Name";
-std::string DEPENDENCY_VERSION = "Version";
-std::string DEPENDENCY_TYPE = "Type";
-std::string DEPENDENCY_TYPE_SOFT = "optional";
-std::string DEPENDENCY_TYPE_HARD = "required";
-std::string DEPENDENCY_TYPE_TEST = "test";
-std::string CATEGORY = "Category";
-
+QString PLUGIN_METADATA = "MetaData";
+QString PLUGIN_NAME = "Name";
+QString PLUGIN_VERSION = "Version";
+QString PLUGIN_REQUIRED = "Required";
+QString SPEC_STATE = "State";
+QString ARGUMENTS = "Arguments";
+QString ARGUMENT_NAME = "Name";
+QString ARGUMENT_PARAMETER = "Parameter";
+QString ARGUMENT_DESCRIPTION = "Description";
+QString DEPENDENCIES = "Dependencies";
+QString DEPENDENCY_NAME = "Name";
+QString DEPENDENCY_VERSION = "Version";
+QString DEPENDENCY_TYPE = "Type";
+QString DEPENDENCY_TYPE_SOFT = "Optional";
+QString DEPENDENCY_TYPE_HARD = "Required";
+QString DEPENDENCY_TYPE_TEST = "Test";
+QString CATEGORY = "Category";
+std::unordered_map<ExtensionSystem::STATE, QString> mMap = {
+    {ExtensionSystem::STATE::Invalid, "Invalid"},
+    {ExtensionSystem::STATE::Read, "Read"},
+    {ExtensionSystem::STATE::Resolved, "Resolved"},
+    {ExtensionSystem::STATE::Loaded, "Loaded"},
+    {ExtensionSystem::STATE::Initialized, "Initialized"},
+    {ExtensionSystem::STATE::Running, "Running"},
+    {ExtensionSystem::STATE::Stopped, "Stopped"},
+    {ExtensionSystem::STATE::Deleted, "Deleted"}};
 bool SPEC::Load() noexcept {
   if (STATE::Resolved != State && STATE::Loaded != State) {
     return false;
   }
   if (STATE::Loaded == State) {
     return true;
-  }
-  //
-  if (!Loader.load()) {
-    std::cout << Name.toStdString()
-              << "加载错误:" << Loader.errorString().toStdString() << std::endl;
-    return false;
   }
   PluginObject.reset(qobject_cast<IPlugin*>(Loader.instance()));
   if (nullptr == PluginObject) {
@@ -65,10 +67,14 @@ bool SPEC::Kill() noexcept {
   if (nullptr == PluginObject) {
     return true;
   }
+  // 切断Spec和插件对象的双向指针
+  PluginObject->GetSpec().reset();
   PluginObject.reset();
   State = STATE::Deleted;
   return true;
 }
+
+bool SPEC::Unload() noexcept { return Loader.unload(); }
 
 bool SPEC::Run() noexcept {
   if (STATE::Initialized != State && STATE::Running != State) {
@@ -100,47 +106,31 @@ bool SPEC::Read(const QString& filePath) noexcept {
   if (Loader.fileName().isEmpty()) {
     return false;
   }
-  QJsonObject MetaData;
-  // TODO后期加上
-  /*
-
-  std::string mIID =
-  Loader.metaData().value(QLatin1String("IID")).tostdString();
-  if(mIID!=IID){
-    return false;
-  }
-
-  QJsonDocument jsDoc(Loader.metaData());
-
-  QFile file1("sa.json");
-  file1.open(QIODevice::ReadWrite);
-  file1.write(jsDoc.toJson());
-  file1.close();
-*/
+  MetaData;
   try {
-    MetaData =
-        Loader.metaData().value(QLatin1String(PLUGIN_METADATA)).toObject();
+    MetaData = Loader.metaData().value(PLUGIN_METADATA).toObject();
   } catch (...) {
     return false;
   }
+
   QJsonValue value;
-  value = MetaData.value(QLatin1String(PLUGIN_NAME));
+  value = MetaData.value(PLUGIN_NAME);
   if (value.isUndefined() || !value.isString()) {
     return false;
   }
-  SetName(value.toString());
-  value = MetaData.value(QLatin1String(PLUGIN_VERSION));
+  Name = value.toString();
+  value = MetaData.value(PLUGIN_VERSION);
   if (value.isUndefined() || !value.isString() ||
       !IsValidVersion(value.toString())) {
     return false;
   }
-  SetVersion(value.toString());
-  value = MetaData.value(QLatin1String(CATEGORY));
+  Version = value.toString();
+  value = MetaData.value(CATEGORY);
   if (value.isUndefined() || !value.isString()) {
     return false;
   }
-  SetCategory(value.toString());
-  value = MetaData.value(QLatin1String(DEPENDENCIES));
+  Category = value.toString();
+  value = MetaData.value(DEPENDENCIES);
   if (value.isUndefined() || !value.isArray()) {
     return false;
   }
@@ -151,10 +141,9 @@ bool SPEC::Read(const QString& filePath) noexcept {
     }
     QJsonObject dependencyObject = v.toObject();
     DEPENDENCY dep;
-    QJsonValue Name = dependencyObject.value(QLatin1String(DEPENDENCY_NAME));
-    QJsonValue Version =
-        dependencyObject.value(QLatin1String(DEPENDENCY_VERSION));
-    QJsonValue Type = dependencyObject.value(QLatin1String(DEPENDENCY_TYPE));
+    QJsonValue Name = dependencyObject.value(DEPENDENCY_NAME);
+    QJsonValue Version = dependencyObject.value(DEPENDENCY_VERSION);
+    QJsonValue Type = dependencyObject.value(DEPENDENCY_TYPE);
 
     if (Name.isUndefined() || !Name.isString()) {
       return false;
@@ -167,11 +156,10 @@ bool SPEC::Read(const QString& filePath) noexcept {
       Dependencies.push_back(
           std::make_tuple(Name.toString(), Version.toString(), TYPE::Optional));
     } else {
-      if (QLatin1String(DEPENDENCY_TYPE_HARD) == Type.toString().toLower()) {
+      if (DEPENDENCY_TYPE_HARD == Type.toString()) {
         Dependencies.push_back(std::make_tuple(
             Name.toString(), Version.toString(), TYPE::Required));
-      } else if (QLatin1String(DEPENDENCY_TYPE_SOFT) ==
-                 Type.toString().toLower()) {
+      } else if (DEPENDENCY_TYPE_SOFT == Type.toString()) {
         Dependencies.push_back(std::make_tuple(
             Name.toString(), Version.toString(), TYPE::Optional));
 
@@ -188,11 +176,23 @@ bool SPEC::Read(const QString& filePath) noexcept {
 
 namespace PluginManager {
 
+PLUGIN_MANAGE::~PLUGIN_MANAGE() {
+  for (auto Spec : PluginSpecs) {
+    EnterTargetState(Spec, STATE::Stopped);
+    EnterTargetState(Spec, STATE::Deleted);
+    Spec->Unload();
+  }
+  Objects.clear();
+  PluginSpecs.clear();
+  PluginCategory.clear();
+  AsyncPlugins.clear();
+}
+
 std::shared_ptr<QObject> PLUGIN_MANAGE::GetObject(
-    const QString& mName) noexcept {
+    std::string_view mName) noexcept {
   std::lock_guard<std::mutex> lock(ObjectMutex);
   for (auto Spec : PluginSpecs) {
-    if (Spec->GetName() == mName) {
+    if (Spec->GetName() == mName.data()) {
       return Spec->GetPlugin();
     }
   }
@@ -212,13 +212,12 @@ std::shared_ptr<T> PLUGIN_MANAGE::GetObject() noexcept {
 
 bool PLUGIN_MANAGE::AddObject(std::shared_ptr<IPlugin> mObject) noexcept {
   std::lock_guard<std::mutex> lock(ObjectMutex);
-  if (nullptr != mObject &&
-      (std::end(Objects) == std::find(begin(Objects), end(Objects), mObject))) {
-    Objects.push_back(mObject);
-    // emit objectChange(mObject);
-    return true;
+  if (nullptr == mObject) {
+    return false;
   }
-  // emit objectChange(mObject);
+  if ((std::end(Objects) == Objects.find(mObject))) {
+    Objects.insert(mObject);
+  }
   return false;
 }
 
@@ -262,7 +261,7 @@ bool PLUGIN_MANAGE::Load() noexcept {
       continue;
     }
     PluginCategory[Spec->GetCategory()].push_back(Spec);
-    PluginSpecs.push_back(Spec);
+    PluginSpecs.insert(Spec);
   }
   if (!Resolve()) {
     return false;
@@ -271,7 +270,7 @@ bool PLUGIN_MANAGE::Load() noexcept {
   // Queue中元素的顺序就是加载的顺序
   std::vector<std::shared_ptr<SPEC>> Queue;
   for (auto Spec : PluginSpecs) {
-    std::vector<std::shared_ptr<SPEC>> Circularity;
+    std::unordered_set<std::shared_ptr<SPEC>> Circularity;
     if (!CircularityCheck(Spec, Queue, Circularity)) {
       // TODO 弹窗提示有插件有循环依赖
       std::cout << "有循环依赖" << std::endl;
@@ -292,7 +291,9 @@ bool PLUGIN_MANAGE::Load() noexcept {
   }
   for (const auto Spec : Queue) {
     if (!EnterTargetState(Spec, STATE::Running)) {
-      std::cout << "初始化插件失败" << std::endl;
+      Spec->Kill();
+      emit sendLog(Spec->GetName() + "插件运行失败", LOGLEVEL::Error);
+      return false;
     }
   }
   return true;
@@ -339,18 +340,16 @@ std::shared_ptr<SPEC> PLUGIN_MANAGE::Find(
 
 bool PLUGIN_MANAGE::CircularityCheck(
     std::shared_ptr<SPEC> Spec, std::vector<std::shared_ptr<SPEC>>& Queue,
-    std::vector<std::shared_ptr<SPEC>>& CircularityCheckQueue) noexcept {
+    std::unordered_set<std::shared_ptr<SPEC>>& CircularityCheckQueue) noexcept {
   if (Queue.end() != std::find(begin(Queue), end(Queue), Spec)) {
     // 已经在队列中就直接返回
     return true;
   }
-  if (CircularityCheckQueue.end() != std::find(begin(CircularityCheckQueue),
-                                               end(CircularityCheckQueue),
-                                               Spec)) {
+  if (CircularityCheckQueue.end() != CircularityCheckQueue.find(Spec)) {
     // 检测到循环依赖
     return false;
   }
-  CircularityCheckQueue.push_back(Spec);
+  CircularityCheckQueue.insert(Spec);
   if (Spec->GetState() == STATE::Read || Spec->GetState() == STATE::Invalid) {
     return false;
   }
@@ -372,6 +371,8 @@ bool PLUGIN_MANAGE::EnterTargetState(const std::shared_ptr<SPEC> Spec,
   switch (TargetState) {
     case STATE::Loaded: {
       if (Spec->GetState() != STATE::Resolved) {
+        emit sendLog(Spec->GetName() + "插件未处于Resolved状态，请检查插件状态",
+                     LOGLEVEL::Warn);
         return false;
       }
       // 检查依赖项是否已经加载
@@ -382,19 +383,40 @@ bool PLUGIN_MANAGE::EnterTargetState(const std::shared_ptr<SPEC> Spec,
           continue;
         }
         if (iter.second->GetState() != TargetState) {
+          emit sendLog(Spec->GetName() + "插件加载失败。依赖项" +
+                           iter.second->GetName() +
+                           "未处于加载状态，请检查插件状态",
+                       LOGLEVEL::Warn);
           return false;
         }
       }
       if (!Spec->Load()) {
+        emit sendLog(Spec->GetName() + "插件实例化失败", LOGLEVEL::Warn);
+        return false;
+      };
+      // 内存池中已经有插件对象实例，直接返回true
+      if (std::end(Objects) != Objects.find(Spec->GetPlugin())) {
+        // 建立Spec与插件对象实例的双向指针
+        Spec->GetPlugin()->SetSpec(Spec);
+        emit sendLog(Spec->GetName() + "插件已经有实例", LOGLEVEL::Info);
+        return true;
+      }
+
+      if (!AddObject(Spec->GetPlugin())) {
+        emit sendLog(Spec->GetName() + "插件加载失败", LOGLEVEL::Warn);
         return false;
       }
-      // 插件sendSignal与PM的receive绑定
+      // 第一次加载插件时，插件sendSignal与PM的receive绑定
       QObject::connect(Spec->GetPlugin().get(), &IPlugin::sendSignal, this,
                        &PLUGIN_MANAGE::Receive);
-      // PM的sendSignal与插件的receive绑定
-      /*QObject::connect(this, &PLUGIN_MANAGE::sendSignal, Spec->GetPlugin(),
-                        &IPlugin::Receive);*/
-      return AddObject(Spec->GetPlugin());
+      // 第一次加载插件时，插件停止信号与PM的停止槽绑定
+      QObject::connect(Spec->GetPlugin().get(),
+                       &IPlugin::asynchronousStopFinished, this,
+                       &PLUGIN_MANAGE::AsyncStopFinished);
+      // 将插件的sendlog与日志对象的ReceiveLog绑定
+      QObject::connect(Spec->GetPlugin().get(), &IPlugin::sendLog, Logger.get(),
+                       &LOGGER::ReceiveLog);
+      return true;
     }
     case STATE::Initialized: {
       if (Spec->GetState() != STATE::Loaded) {
@@ -418,11 +440,33 @@ bool PLUGIN_MANAGE::EnterTargetState(const std::shared_ptr<SPEC> Spec,
       }
       return Spec->Run();
     }
-    case STATE::Deleted: {
-      return Spec->Kill();
-    }
+    // 停止插件运行
     case STATE::Stopped: {
-      Spec->Stop();
+      auto mState = Spec->GetState();
+      if (STATE::Loaded != mState && STATE::Initialized != mState &&
+          STATE::Running != mState) {
+        emit sendLog(Spec->GetName() +
+                         "插件未处于加载、初始化或者运行状态，请检查插件状态",
+                     LOGLEVEL::Warn);
+        return false;
+      }
+      if (Spec->Stop() == ExtensionSystem::StopFlag::AsynchronousStop) {
+        AsyncPlugins.insert(Spec);
+      }
+      return true;
+    }
+    // 卸载插件
+    case STATE::Deleted: {
+      if (STATE::Stopped != Spec->GetState()) {
+        emit sendLog(Spec->GetName() + "插件未处于停止状态，请检查插件状态",
+                     LOGLEVEL::Warn);
+        return false;
+      }
+      if (!Spec->Kill()) {
+        emit sendLog(Spec->GetName() + "插件卸载失败", LOGLEVEL::Warn);
+        return false;
+      }
+      emit sendLog(Spec->GetName() + "插件已经卸载", LOGLEVEL::Warn);
       return true;
     }
     default:
@@ -457,6 +501,22 @@ void PLUGIN_MANAGE::Receive(MSG Msg) noexcept {
   log = "转发消息时没有找到目标插件" + receiver;
   emit sendLog(log, LOGLEVEL::Error);
   return;
+}
+
+void PLUGIN_MANAGE::AsyncStopFinished(std::shared_ptr<SPEC> mSpec) noexcept {
+  AsyncPlugins.erase(mSpec);
+  emit sendLog("插件" + mSpec->GetName() + "已经停止", LOGLEVEL::Warn);
+}
+
+std::vector<QJsonObject> PLUGIN_MANAGE::GetInfo() noexcept {
+  std::vector<QJsonObject> Info;
+  for (auto Spec : PluginSpecs) {
+    QJsonObject TempInfo = Spec->GetMetaData();
+    TempInfo.insert(SPEC_STATE, mMap.find(Spec->GetState())->second);
+    Info.push_back(TempInfo);
+  }
+
+  return std::move(Info);
 }
 
 bool PLUGIN_MANAGE::UnLoad(const QString& Path) noexcept { return true; }
